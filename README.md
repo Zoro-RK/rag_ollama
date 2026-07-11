@@ -1,6 +1,6 @@
-# RAG PDF Question Answering
+# RAG PDF Answering System
 
-`rag_generation.py` is a local retrieval-augmented generation script that reads one or more PDF files, chunks their text, builds a FAISS vector index, and answers questions with Ollama using only the retrieved context.
+`rag_generation.py` ianalyzes multiple PDF documents, chunks their content into smaller context units, retrieves the most relevant chunks for a user question, and generates grounded answers strictly from the source text. The system is designed to reduce hallucination by relying only on retrieved PDF context and returning an answer only when the information is supported by the documents, builds a FAISS vector index, and answers questions with Ollama using only the retrieved context.
 
 ## What it does
 
