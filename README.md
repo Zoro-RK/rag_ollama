@@ -1,31 +1,96 @@
-# RAG PDF Answering System
+# Grounded PDF RAG System
 
-`rag_generation.py` ianalyzes multiple PDF documents, chunks their content into smaller context units, retrieves the most relevant chunks for a user question, and generates grounded answers strictly from the source text. The system is designed to reduce hallucination by relying only on retrieved PDF context and returning an answer only when the information is supported by the documents, builds a FAISS vector index, and answers questions with Ollama using only the retrieved context.
+This repository contains a local PDF question-answering workflow and two standalone evaluation scripts for comparing semantic chunk sizes.
 
-## What it does
+The main RAG pipeline reads PDFs, chunks the extracted text, embeds the chunks, stores them in FAISS, retrieves the most relevant context with cosine similarity, and generates a grounded answer from the retrieved text.
 
-- Scans the repository for PDF files.
-- Extracts text from each PDF page.
-- Splits page text into overlapping sentence chunks.
-- Embeds the chunks with `sentence-transformers`.
-- Stores embeddings in a FAISS index.
-- Retrieves the most relevant chunks for a user question.
-- Sends the retrieved context to Ollama for the final answer.
+## Repository Contents
 
-## PDF sources
+- `rag_generation.py` - main interactive RAG script
+- `semantic_chunking_512.py` - standalone evaluation script for semantic chunking with 512-character chunks
+- `semantic_chunking_1024.py` - standalone evaluation script for semantic chunking with 1024-character chunks
+- `data/` and `pdfs/` - PDF inputs used by the scripts
 
-The script currently reads PDFs from these folders if they exist:
+## Main RAG Workflow
 
-- `data/`
-- `pdfs/`
+1. Load PDF files from the repository folders.
+2. Extract page text from each PDF.
+3. Chunk the extracted text.
+4. Convert chunks into embeddings.
+5. Store embeddings in a FAISS vector index.
+6. Embed the user question.
+7. Retrieve the top-k most similar chunks.
+8. Send the retrieved context to the LLM for a grounded answer.
 
-It also searches recursively under the selected root, so any additional PDFs placed in those folders will be included automatically.
+## Indexing and Retrieval Methods
 
-## Encrypted PDFs
+- Indexing method: `FAISS IndexFlatIP`
+- Retrieval method: top-5 cosine similarity search
+- Embeddings are L2-normalized before indexing, so inner product acts like cosine similarity.
 
-Some PDFs may be encrypted. When available, the script uses Poppler `pdftotext` to extract text from those files so they can still be chunked and indexed.
+## Main Script Details
 
-If `pdftotext` is not available, the script falls back to `pypdf`.
+`rag_generation.py` is the interactive RAG application. It:
+
+- scans `data/` and `pdfs/` for PDF files
+- extracts text from each page
+- chunks text into overlapping sentence windows
+- builds embeddings using `all-MiniLM-L6-v2`
+- stores vectors in `FAISS IndexFlatIP`
+- retrieves the top 5 relevant chunks
+- sends the retrieved context to Ollama for the final answer
+
+### PDF Extraction
+
+The script uses `pdftotext` when available to support encrypted PDFs. If `pdftotext` is not available, it falls back to `pypdf`.
+
+### Answering Behavior
+
+The prompt is constrained to the retrieved context so the answer stays grounded in the source PDFs and reduces hallucination risk.
+
+## Semantic Chunking Evaluation Scripts
+
+These scripts are independent from the main RAG application and are used only to compare chunk sizes.
+
+### `semantic_chunking_512.py`
+
+- Method: Semantic Chunking
+- Chunk size: 512 characters
+- Chunk overlap: 100 characters
+- Embedding model: `sentence-transformers/all-MiniLM-L6-v2`
+- Vector database: FAISS `IndexFlatIP`
+- Retrieval: top-5 cosine similarity
+- Metrics: Precision and Recall
+
+### `semantic_chunking_1024.py`
+
+- Method: Semantic Chunking
+- Chunk size: 1024 characters
+- Chunk overlap: 100 characters
+- Embedding model: `sentence-transformers/all-MiniLM-L6-v2`
+- Vector database: FAISS `IndexFlatIP`
+- Retrieval: top-5 cosine similarity
+- Metrics: Precision and Recall
+
+### Evaluation Flow
+
+Both evaluation scripts follow the same workflow:
+
+1. Load PDFs.
+2. Extract text from each page.
+3. Chunk the text using `RecursiveCharacterTextSplitter`.
+4. Create embeddings.
+5. Build a FAISS vector index.
+6. Retrieve the top 5 chunks for each evaluation question.
+7. Compute Precision and Recall using the evaluation dataset.
+8. Print per-question and summary statistics.
+
+## Evaluation Dataset
+
+The evaluation scripts include a small source-labeled dataset inside the script. Each question is mapped to one or more relevant PDF sources, and the retrieved top-5 chunks are checked against those sources to compute:
+
+- Precision@5
+- Recall@5
 
 ## Requirements
 
@@ -34,18 +99,25 @@ If `pdftotext` is not available, the script falls back to `pypdf`.
 - `numpy`
 - `pypdf`
 - `sentence-transformers`
-- `ollama`
+- `ollama` for the main RAG script
+- `langchain_text_splitters` recommended for the semantic chunking evaluation scripts
 - Poppler `pdftotext` recommended for encrypted PDFs
 
 ## Setup
 
-Install the Python packages in your environment:
+Install the core Python packages:
 
 ```bash
 pip install faiss-cpu numpy pypdf sentence-transformers ollama
 ```
 
-Make sure Ollama is installed and running locally, and pull the model used by the script:
+For the semantic chunking scripts, install the text splitter package:
+
+```bash
+pip install langchain-text-splitters
+```
+
+If you want to use the main RAG script with Ollama, make sure the model is available locally:
 
 ```bash
 ollama pull gemma3:12b
@@ -53,43 +125,27 @@ ollama pull gemma3:12b
 
 ## Run
 
-From the project root:
+Main RAG application:
 
 ```bash
 python3 rag_generation.py
 ```
 
-The script will:
+Semantic chunking evaluation with 512-character chunks:
 
-1. Find all PDFs in the configured folders.
-2. Build the vector index.
-3. Start an interactive question loop.
+```bash
+python3 semantic_chunking_512.py
+```
 
-Type a question and press Enter. Type `exit` to quit.
+Semantic chunking evaluation with 1024-character chunks:
 
-## How chunking works
-
-The current chunking strategy is sentence-based:
-
-- Each page is cleaned by removing extra whitespace.
-- Sentences are grouped into chunks of 3 sentences.
-- The chunks overlap by 1 sentence to preserve context between chunks.
-
-This improves retrieval quality compared with fixed-size, non-overlapping chunks.
-
-## Output
-
-For each question, the script prints:
-
-- the top matching chunks
-- the source PDF name
-- the page number
-- the chunk number
-- the similarity score
-- the final Ollama-generated answer
+```bash
+python3 semantic_chunking_1024.py
+```
 
 ## Notes
 
-- If no readable PDFs are found, the script raises an error instead of running with an empty index.
-- If `ollama` is not installed in the active Python environment, the script will stop when it reaches the answer-generation step.
-- The script is intended for local document QA, not for general web search.
+- The main RAG script is interactive and continues accepting questions until you type `exit`.
+- The semantic chunking scripts are evaluation-only and print retrieval statistics instead of generating LLM answers.
+- If no readable PDFs are found, the scripts stop with an error instead of building an empty index.
+- The evaluation scripts are intentionally separate from the main RAG implementation so the chunk-size comparison stays isolated and reproducible.
